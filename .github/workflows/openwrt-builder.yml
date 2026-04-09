@@ -6,7 +6,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,38 +28,45 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Patch Podkop & Config
+      - name: Patch Podkop & Config (NO heredoc)
         run: |
           cd openwrt
 
           git clone "https://github.com/itdoginfo/podkop.git" package/podkop
 
           mkdir -p files/etc/uci-defaults
-          cat <<'EOF' > files/etc/uci-defaults/99-custom-settings
-          uci set luci.main.lang='ru'
-          uci set podkop.config.enabled='1'
-          uci set wireless.radio0.disabled='0'
-          uci set wireless.default_radio0.ssid='Ezel2'
-          uci set wireless.default_radio0.encryption='psk2'
-          uci set wireless.default_radio0.key='123456780'
-          uci commit
-          exit 0
-          EOF
+          cat > files/etc/uci-defaults/99-custom-settings <<'SH'
+uci set luci.main.lang='ru'
+uci set podkop.config.enabled='1'
+uci set wireless.radio0.disabled='0'
+uci set wireless.default_radio0.ssid='Ezel2'
+uci set wireless.default_radio0.encryption='psk2'
+uci set wireless.default_radio0.key='123456780'
+uci commit
+exit 0
+SH
 
-          # Target / SoC (Mi Router 4A Gigabit Edition)
-          echo "CONFIG_TARGET_ramips=y" > .config
+          # Target / SoC
+          sed -i '/^CONFIG_TARGET_/d' .config || true
+          echo "CONFIG_TARGET_ramips=y" >> .config
           echo "CONFIG_TARGET_ramips_mt7621=y" >> .config
           echo "CONFIG_TARGET_ramips_mt7621_DEVICE_xiaomi_mi-router-4a-gigabit=y" >> .config
 
           # Rootfs
+          sed -i '/^CONFIG_TARGET_ROOTFS_INITRAMFS=/d' .config || true
           echo "CONFIG_TARGET_ROOTFS_INITRAMFS=y" >> .config
 
           # LuCI + Russian
+          sed -i '/^CONFIG_PACKAGE_luci=/d' .config || true
+          sed -i '/^CONFIG_PACKAGE_luci-base=/d' .config || true
+          sed -i '/^CONFIG_PACKAGE_luci-i18n-russian=/d' .config || true
           echo "CONFIG_PACKAGE_luci=y" >> .config
           echo "CONFIG_PACKAGE_luci-base=y" >> .config
           echo "CONFIG_PACKAGE_luci-i18n-russian=y" >> .config
 
           # Podkop + LuCI app
+          sed -i '/^CONFIG_PACKAGE_podkop=/d' .config || true
+          sed -i '/^CONFIG_PACKAGE_luci-app-podkop=/d' .config || true
           echo "CONFIG_PACKAGE_podkop=y" >> .config
           echo "CONFIG_PACKAGE_luci-app-podkop=y" >> .config
 
@@ -76,7 +82,7 @@ jobs:
           cd openwrt
           make -j$(nproc) || make -j1 V=s
 
-      - name: List artifacts (ramips mt7621)
+      - name: List artifacts (sysupgrade)
         run: |
           ls -la openwrt/bin/targets/ramips/mt7621/
           echo "---- only sysupgrade ----"
