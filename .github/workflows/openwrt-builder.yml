@@ -25,7 +25,7 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
           mkdir -p files/etc/uci-defaults
-          cat <<EOF > files/etc/uci-defaults/99-custom-settings
+          cat <<'EOF' > files/etc/uci-defaults/99-custom-settings
 #!/bin/sh
 uci set luci.main.lang='ru'
 uci set podkop.config.enabled='1'
