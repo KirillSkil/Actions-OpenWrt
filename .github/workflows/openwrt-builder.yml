@@ -6,6 +6,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -42,18 +43,21 @@ jobs:
           TARGET="ramips"
           SUBTARGET="mt7621"
 
-          make target=${TARGET} SUBTARGET=${SUBTARGET} defconfig
+          make target="${TARGET}" SUBTARGET="${SUBTARGET}" defconfig
 
           for p in \
-            "podkop" \
-            "luci-app-podkop" \
-            "luci-i18n-podkop-ru" \
-            "luci-app-podkop-ru" \
-            "luci-i18n-podkop" \
-            "luci-i18n-russian" ; do
-              if make package/$p/info >/dev/null 2>&1; then
-                echo "CONFIG_PACKAGE_${p}=y" >> .config
-              fi
+            podkop \
+            luci-app-podkop \
+            luci-i18n-podkop-ru \
+            luci-app-podkop-ru \
+            luci-i18n-podkop \
+            luci-i18n-russian; do
+            if make "package/${p}/info" >/dev/null 2>&1; then
+              echo "FOUND ${p}"
+              echo "CONFIG_PACKAGE_${p}=y" >> .config
+            else
+              echo "MISSING ${p}"
+            fi
           done
 
           echo "CONFIG_PACKAGE_luci=y" >> .config || true
@@ -61,12 +65,15 @@ jobs:
 
           make olddefconfig
 
+          echo "=== .config tail ==="
+          tail -n 80 .config
+
       - name: Build
         working-directory: openwrt
         run: |
           make -j"$(nproc)" V=s
 
-      - name: Upload
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: openwrt-23.05-ramips-mt7621-podkop-ru
