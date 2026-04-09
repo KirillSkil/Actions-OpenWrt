@@ -44,7 +44,6 @@ jobs:
 
           make target=${TARGET} SUBTARGET=${SUBTARGET} defconfig
 
-          # Try to enable Podkop and related Luci packages if they exist in feeds
           for p in \
             "podkop" \
             "luci-app-podkop" \
