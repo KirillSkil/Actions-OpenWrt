@@ -1,10 +1,27 @@
-  - name: Clone OpenWrt
+name: Build OpenWrt
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libncurses5-dev gawk git gettext libssl-dev swig zip unzip zlib1g-dev python3 python3-setuptools
+
+      - name: Clone OpenWrt
         run: git clone https://github.com/openwrt/openwrt.git openwrt
 
       - name: Patch Podkop & Config
         run: |
           cd openwrt
-          git clone "https://github.com/itdoginfo/podkop.git" package/podkop
+          git clone https://github.com/itdoginfo/podkop.git package/podkop
           ./scripts/feeds update -a
           ./scripts/feeds install -a
           mkdir -p files/etc/uci-defaults
@@ -32,3 +49,19 @@ CONFIG_PACKAGE_podkop=y
 CONFIG_LUCI_LANG_ru=y
 EOF
           make defconfig
+
+      - name: Download packages
+        run: |
+          cd openwrt
+          make download -j$(nproc)
+
+      - name: Compile firmware
+        run: |
+          cd openwrt
+          make -j$(nproc) || make -j1 V=s
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openwrt-firmware
+          path: openwrt/bin/targets/ramips/mt7621/*.bin
