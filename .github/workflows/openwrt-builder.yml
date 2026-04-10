@@ -1,37 +1,100 @@
-name: Mi4A_v1_Build
+# workflow: OpenWrt firmware build process
+name: OpenWrt_Builder_v2
 
+# Trigger: allows manual execution from GitHub Actions UI
 on:
   workflow_dispatch:
 
+# Define the jobs to be executed
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # Specify the execution environment
+    runs-on: ubuntu-22.04
     steps:
+      # 1. Checkout the repository
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Update apt package list
-        run: sudo apt-get update
-
+      # 2. Install necessary build dependencies
+      # This step ensures all required tools and libraries are available.
       - name: Install build dependencies
-        run: sudo apt-get install -y build-essential flex gawk gcc-multilib gettext git libncurses5-dev libssl-dev python3-distutils rsync unzip zlib1g-dev
+        run: sudo apt-get update && sudo apt-get install -y \
+          build-essential clang flex bison g++ gawk gcc-multilib gettext git \
+          libncurses5-dev libssl-dev python3-distutils rsync unzip zlib1g-dev \
+          file wget
 
-      - name: Download, unpack and enter Image Builder directory
+      # 3. Clone the OpenWrt source code
+      # We clone a specific branch (openwrt-23.05) with a shallow history for speed.
+      - name: Clone OpenWrt source
         run: |
-          wget -O openwrt-imagebuilder.Linux-x86_64.tar.xz https://downloads.openwrt.org/releases/23.05.2/targets/ramips/mt7621/openwrt-imagebuilder-23.05.2-ramips-mt7621_generic.Linux-x86_64.tar.xz
-          tar -xJvf openwrt-imagebuilder.Linux-x86_64.tar.xz
-          cd openwrt-imagebuilder-23.05.2-ramips-mt7621_generic.Linux-x86_64/
+          rm -rf openwrt # Clean up any previous downloads
+          git clone --depth 1 -b openwrt-23.05 https://github.com/openwrt/openwrt.git openwrt
 
-      - name: Configure custom repositories
+      # 4. Update and install package feeds
+      # This makes additional packages available for selection.
+      - name: Update & install feeds
         run: |
-          echo "src/gz podkop https://podkop.net" >> repositories.conf
+          cd openwrt
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
 
-      - name: Build OpenWrt image
+      # 5. Configure the build
+      # This includes setting the target device, adding custom packages (podkop, luci-app-podkop),
+      # and applying default settings like Russian language and Wi-Fi configuration.
+      - name: Configure build and add packages
         run: |
-          make image PROFILE="xiaomi_mi-router-4a-gigabit" PACKAGES="luci podkop -ppp -ppp-mod-pppoe -kmod-ppp -kmod-pppoe"
+          set -e # Exit on error
+          cd openwrt
+          # Add the podkop package. Use a specific commit or branch if needed.
+          git clone --depth 1 https://github.com/itdoginfo/podkop.git package/podkop
 
-      - name: Upload firmware artifact
+          # Create a custom configuration file for defaults
+          mkdir -p files/etc/uci-defaults
+          cat > files/etc/uci-defaults/99-custom-settings <<'EOF'
+uci set luci.main.lang='ru'
+uci set podkop.config.enabled='1'
+uci set wireless.default_radio0.ssid='MyWifiSSID'
+uci set wireless.default_radio0.encryption='psk2'
+uci set wireless.default_radio0.key='YourSecurePassword'
+uci commit
+EOF
+
+          # Clean previous configs and apply target-specific settings for Xiaomi Mi Router 4A Gigabit
+          make distclean >/dev/null 2>&1 # Clean build configuration
+          # Set target architecture and device
+          echo "CONFIG_TARGET_ramips=y" >> .config
+          echo "CONFIG_TARGET_ramips_mt7621=y" >> .config
+          echo "CONFIG_TARGET_ramips_mt7621_DEVICE_xiaomi_mi-router-4a-gigabit=y" >> .config
+          # Enable initramfs rootfs
+          echo "CONFIG_TARGET_ROOTFS_INITRAMFS=y" >> .config
+          # Select core LuCI components and Russian language pack
+          echo "CONFIG_PACKAGE_luci=y" >> .config
+          echo "CONFIG_PACKAGE_luci-base=y" >> .config
+          echo "CONFIG_PACKAGE_luci-i18n-russian=y" >> .config
+          # Select podkop and its LuCI integration
+          echo "CONFIG_PACKAGE_podkop=y" >> .config
+          echo "CONFIG_PACKAGE_luci-app-podkop=y" >> .config
+
+          make defconfig # Generate the .config file based on selections
+
+      # 6. Download package source archives
+      # This prepares all necessary source files for compilation.
+      - name: Download sources
+        run: |
+          cd openwrt
+          make download -j$(nproc) # Use all available cores for downloading
+
+      # 7. Compile the firmware
+      # This is the main build step. We use multiple cores for speed but include a fallback.
+      - name: Compile firmware
+        run: |
+          cd openwrt
+          make -j$(nproc) || make -j1 V=s # Compile using multiple cores, fallback if needed
+
+      # 8. Upload the generated sysupgrade firmware as an artifact
+      # This makes the built firmware available for download after the workflow run.
+      - name: Upload sysupgrade artifact
         uses: actions/upload-artifact@v4
         with:
-          name: openwrt-firmware
-          path: bin/targets/ramips/mt7621/*.bin
+          name: OpenWrt_Sysupgrade_Firmware # Name for the artifact
+          path: openwrt/bin/targets/ramips/mt7621/*sysupgrade*.bin # Path to the firmware files
